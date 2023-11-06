@@ -1,0 +1,24 @@
+Irrigation system using a DS3231 or DS1307, 20x4 LCD with I2C interface, Water Sensor module, and 5 Push Buttons
+
+Ensure you have the I2C to LCD library installed:  https://github.com/fdebrabander/Arduino-LiquidCrystal-I2C-library
+
+and the Real Time Clock libaray installed: https://www.arduino.cc/reference/en/libraries/rtclib/
+
+(Optional) Lastly, I2CScanner to located Serial address for components: https://www.arduino.cc/reference/en/libraries/i2cscanner/
+
+
+Connect components to arduino as following:
+
+Water Sensor: Analog 0 
+
+LCD & RTC: SDA, SCL pins (A4, A5 for Nano) with a 10K pull up resistor on both. 
+
+Push Buttons =>
+
+		{
+		Top Button: D2
+		Middle Button: D3
+		Bottom Button: D4
+		Right Button: D5
+		Left Button: D6
+		}
