@@ -1,6 +1,8 @@
 #include "RTClib.h"
 #include <Wire.h> 
 #include <LiquidCrystal_I2C.h>
+#include <stdio.h>
+#include <string.h>
 #define sensorPower 7 
 #define sensorPin A0
 RTC_DS3231 rtc;
@@ -13,6 +15,8 @@ const int rightButton = 5;  // the number of the pushbutton pin
 const int leftButton = 6;  // the number of the pushbutton pin
 const int topButton = 2;  // the number of the pushbutton pin
 const int ledPin = 13;
+const int pumpPin = 8;
+const int buzzPin = 9;
 
 // variables will change:
 int middleState = 0;  // variable for reading the pushbutton status
@@ -25,7 +29,7 @@ int waterVal = 0;
 int delayTime;
 int dayCounter; // Iterates through days array
 int prevDayCounter; // Checker for counter adjustments and limits lcd prints
-int appendDay = 0; // Determines location of array to append additonal day selections
+int appendDay = 0; // Determines location of array to append day selections
 int timeCounter; // Iterates through maxTimes for timeInitialization
 int prevTimeCounter; // Checker for counter adjustments and limits lcd prints
 int amPmCounter; // Iterates through meridiem array
@@ -41,8 +45,11 @@ bool isTimeSet;
 bool isHourSet;
 bool isMinSet;
 bool isAmPmSet;
+bool arrows;
+bool restart;
+bool isToday;
+bool isDayLightSavings;
 bool isWet = false;
-bool error;
 
 unsigned long lastDebounceTime = 0;
 unsigned long debounceDelay = 450; // Adjust debounce delay as needed (in milliseconds)
@@ -51,9 +58,10 @@ String hourString; // Converted setHour to a String
 String minString; // Converted setMin to a String
 String timeString; // Concatenation of hourString:minString
 String amPm; // Holds result of amPmInitialize, either AM or PM
-String setDay; // Holds result of dayInitialize, one day of the week
 
-int dayIndexArray[7] = {8, 8, 8, 8, 8, 8, 8};
+
+int setTime[2];
+bool selectedDays[7] = {false, false, false, false, false, false, false}; // Array that holds user's selected day indexes 
 char daysOfTheWeek[7][12] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"}; // Array holding days of the Week with a range between 0 and 6 
 String abrevWeek[7] = {"Su", "M", "Tu", "W", "Th", "F", "Sa"};
 String sortedWeek[7];
@@ -106,7 +114,7 @@ byte upArrow[] = {
 
 
 
-void readButtons()
+void readButtons() // Read current value for each button
 {
   middleState = digitalRead(middleButton);
   bottomState = digitalRead(bottomButton);
@@ -124,49 +132,61 @@ int readSensor()
 	return waterVal;							// send current reading
 }
 
-bool anyKey() 
+void hapticFeedback()
+{
+  digitalWrite(buzzPin, HIGH);
+  delay(10);
+  digitalWrite(buzzPin, LOW);
+}
+
+bool isUpButton() // check if top button is pressed
+{
+  hapticFeedback();
+  return (topState == HIGH);
+}
+
+bool isDownButton() // check if bottom button is pressed
+{
+  hapticFeedback();
+  return (bottomState == HIGH);
+}
+
+bool isLeftButton() // check if left button is pressed
+{
+  hapticFeedback();
+  return (leftState == HIGH);
+}
+
+bool isRightButton() // check if right button is pressed
+{
+  hapticFeedback();
+  return (rightState == HIGH);
+}
+
+bool isMiddleButton() // check if middle button is pressed
+{
+  hapticFeedback();
+  return (middleState == HIGH);
+}
+
+bool anyKey() // check if any button is pressed
 {
   return (topState == HIGH || bottomState || leftState == HIGH || rightState == HIGH || middleState == HIGH);
 }
 
-bool isUpButton()
-{
-  return (topState == HIGH);
-}
-
-bool isDownButton()
-{
-  return (bottomState == HIGH);
-}
-
-bool isLeftButton()
-{
-  return (leftState == HIGH);
-}
-
-bool isRightButton()
-{
-  return (rightState == HIGH);
-}
-
-bool isMiddleButton()
-{
-  return (middleState == HIGH);
-}
-
-void pressAny()
+void pressAny() // if anykey is pressed, continue
 {
   lcd.print("Press Any Key");
   while (true) {
   readButtons();
   if (anyKey())
   {
+    hapticFeedback();
     lcd.clear();
     break;
   }
   }
 }
-
 
 bool yes_no(String question) {
   lcd.clear();
@@ -207,16 +227,14 @@ bool containsDay(const int array[], int size, int value) {
   return false;
 }
 
-void sortArray(String day) {
 
-
-}
-
-String listAllDays(int indexArray[], int size) {
+String listAllArray(bool array[], int size) {
   String result = "";
   for (int i = 0; i < size; i++) {
-    if (indexArray[i] != 8) {
-    result += abrevWeek[indexArray[i]] + " "; }
+    if (array[i]) {
+    result += abrevWeek[i] + " "; 
+    isArrayReady = true;
+    }
     else {
     continue;
     }
@@ -224,37 +242,46 @@ String listAllDays(int indexArray[], int size) {
   return result;
 }
 
-bool dupDays(int counter) {
-  if (containsDay(dayIndexArray, 7, counter))
-  {
-    lcd.clear();
-    lcd.setCursor(0, 0);
-    lcd.print("Duplciate Day");
-    lcd.setCursor(0, 1);
-    lcd.print("Please Try Again");
-    dayCounter = (dayCounter + 1) % 7;
-    lcd.setCursor(0, 3);
-    delay(2000);
-    pressAny();
-    dayInitialize();
+int clearArray(int array[])
+{
+for (int j = 0; j > appendDay; j++) {
+  array[j] = 8;
+}
+appendDay = 0;
+return appendDay;
+}
 
-
-    
+void copyArray(int* array, int size, int* copy) {
+  for (int i = 0; i < size; i++) {
+    copy[i] = daysOfTheWeek[array[i]];
   }
 }
 
-void clearArray(int array[])
-{
-for (int j = 0; j > 7; j++) {
-  array[j] = 8;
-}
+void printIntArray(int* array, int size) { // REMOVE
+  for (int i = 0; i < size; i++) {
+    lcd.print(array[i]);
+    lcd.print(" ");
+    }
 }
 
+bool checkDay(String day) {
+    for (int i = 0; i < 7; i++) {
+        if (strcmp(daysOfTheWeek[i], day.c_str()) == 0) {
+            return selectedDays[i];
+    }
+  }
+}
+
+bool checkWet(int waterLevel) {
+  isWet = (waterLevel >= 100);
+  return isWet;
+} 
 
 
 void dayInitialize() { //set day to water:
   unsigned long debounceTime = 50; // Debounce time in milliseconds
   unsigned long lastButtonPress = 0; // Variable to store the last button press time
+
 
   
   while (!isDaySet) {
@@ -275,15 +302,13 @@ void dayInitialize() { //set day to water:
         lcd.setCursor(19, 1);
         lcd.write(3);
         lcd.setCursor(0, 2);
-        lcd.print(listAllDays(dayIndexArray, 6));
+        lcd.print(listAllArray(selectedDays, 7));
         prevDayCounter = dayCounter;
         isSetReady = true;
         lcd.setCursor(0, 3);
         if (isArrayReady) {
         lcd.print("Press Down to Finish");
         }
-
-
       }
 
       if (isRightButton()) {
@@ -293,34 +318,40 @@ void dayInitialize() { //set day to water:
         // Left button pressed
         dayCounter = (dayCounter + 6) % 7;
       } else if (isMiddleButton() && isSetReady) {
-        (dupDays(dayCounter));
         lcd.setCursor(0,0);
         lcd.print("Add Additonal Days?");
         lcd.setCursor(0,3);
         lcd.print("Press Down to Finish");
-        dayIndexArray[appendDay] = dayCounter;
-        appendDay ++;
-        setDay = displayDay;
-        isArrayReady = true;
+        selectedDays[dayCounter] = !selectedDays[dayCounter];
+        isArrayReady = false;
+        lcd.setCursor(0, 2);
+        lcd.print(listAllArray(selectedDays, 7));
         delay(1000);
       }
       else if (isDownButton() && isArrayReady) {
-      if (yes_no("Is " + listAllDays(dayIndexArray, 6) + "Correct?")) { 
-      isDaySet= true;
-      }
-      else
-      {
-      isSetReady = false;
-      isArrayReady = false;
-      dayInitialize();
-      
-      }
+        if (yes_no("Is " + listAllArray(selectedDays, 7) + "Correct?")) { 
+          isDaySet = true;
+        }
+        else
+        {
+          selectedDays[0] = false;
+          selectedDays[1] = false;
+          selectedDays[2] = false;
+          selectedDays[3] = false;
+          selectedDays[4] = false;
+          selectedDays[5] = false;
+          selectedDays[6] = false;
+          isSetReady = false;
+          isArrayReady = false;
+          appendDay = 0;
+          dayInitialize();
+        
+        }
       }
       
       lastButtonPress = currentMillis; // Update the last button press time
     }
   }
-
   isSetReady = false;
 }
 
@@ -328,42 +359,78 @@ void dayInitialize() { //set day to water:
 void timeInitialize() {
   unsigned long debounceTime = 50; // Debounce time in milliseconds
   unsigned long lastButtonPress = 0; // Variable to store the last button press time
-  
+  timeCounter = 0;
+
+  // Loop until the time is set
   while (!isTimeSet) {
+    // Reset flags and adjust timeCounter if restart is requested
+    if (restart) {
+      isSetReady = false;
+      isHourSet = false;
+      isMinSet = false;
+      timeCounter = (timeCounter % 12) + 1;
+      restart = false;
+    }
+
+    // Wait for a short duration
     delay(200);
+
+    // Read button inputs
     readButtons();
     unsigned long currentMillis = millis();
 
+    // Display arrows to indicate time adjustment
+    if (arrows) {
+      lcd.setCursor(19, 0);
+      lcd.write(0);
+      lcd.setCursor(19, 3);
+      lcd.write(1);
+    }
+
     // Check if enough time has passed since the last button press
     if (currentMillis - lastButtonPress >= debounceTime) {
+      // Check if timeCounter has changed
       if (prevTimeCounter != timeCounter) {
         prevTimeCounter = timeCounter;
         lcd.clear();
+        arrows = true;
         isSetReady = true;
 
+        // Display appropriate message based on whether hour or minute is being set
         if (!isHourSet) {
           lcd.print("Input Hour");
           lcd.setCursor(7, 1);
+          lcd.print(timeCounter);
         } else {
           lcd.print("Input Minute(s)");
           lcd.setCursor(7, 1);
           lcd.print(hourString);
           lcd.setCursor(7 + hourString.length(), 1);
+          lcd.print((timeCounter < 10) ? "0" + String(timeCounter) : String(timeCounter));
         }
-        lcd.print(timeCounter);
       }
 
-      int maxTime = (isHourSet) ? 59 : 12; // Max value that setHour/setMin can be input as, adjusts based on isHourSet bool
+      int maxTime = (isHourSet) ? 60 : 13; // Max value for setHour/setMin, adjusts based on isHourSet bool
+      int incrementValue = (isHourSet) ? 5 : 1; // Max value for setHour/setMin, adjusts based on isHourSet bool
 
+
+      // Check button states and update timeCounter accordingly
       if (isUpButton()) {
         // Up button pressed
-        timeCounter = (timeCounter % maxTime) + 1;
+        timeCounter = (timeCounter + incrementValue) % maxTime;
+        timeCounter = (!isHourSet && timeCounter == 0) ? 1 : timeCounter;
+        lcd.setCursor(19, 0);
+        lcd.write(0);
       } else if (isDownButton()) {
         // Down button pressed
-        timeCounter = ((timeCounter - 2 + maxTime) % maxTime) + 1;
+        timeCounter = ((timeCounter + (maxTime - incrementValue)) % maxTime);
+        timeCounter = (!isHourSet && timeCounter == 0) ? 12 : timeCounter;
+        lcd.setCursor(19, 3);
+        lcd.write(1);
       } else if (isMiddleButton() && isSetReady) {
         // Middle button pressed
         if (!isHourSet) {
+          // Set hour and prepare for minute selection
           setHour = timeCounter;
           hourString = (setHour < 10) ? "0" + String(setHour) + ":" : String(setHour) + ":";
           lcd.setCursor(0, 0);
@@ -371,21 +438,27 @@ void timeInitialize() {
           lcd.setCursor(7, 1);
           lcd.print(hourString);
           isHourSet = true;
-          timeCounter = 0; // Return timeCounter back to 0 to prep for Minute selection
+          timeCounter = 0; // Reset timeCounter for Minute selection
+          delay(500);
         } else {
+          // Set minute, construct timeString, and confirm with the user
           lcd.clear();
           lcd.setCursor(7, 1);
           lcd.print(hourString);
           setMin = timeCounter;
           isMinSet = true;
-        }
-        if (isMinSet) {
           String minString = (setMin < 10) ? "0" + String(setMin) : String(setMin);
           timeString = hourString + minString;
+
+          // Confirm with the user
           if (yes_no("Is " + timeString + " Correct?")) {
             isTimeSet = true;
+            setTime[0] = setHour;
+            setTime[1] = setMin;
+
           } else {
-            timeInitialize();
+            restart = true;
+            timeInitialize(); // Restart the time setting process
           }
         }
         lastButtonPress = currentMillis; // Update the last button press time
@@ -393,14 +466,16 @@ void timeInitialize() {
     }
   }
   isSetReady = false;
-  lcd.clear();
 }
 
 
-String amPmInitialize() { //set AmPm to water: 
-// Intergrate this into time selection method, no need to have seperate methods for this
-  unsigned long debounceTime = 50; // Debounce time in milliseconds
-  unsigned long lastButtonPress = 0; // Variable to store the last button press time
+
+int amPmInitialize() {
+  unsigned long debounceDelay = 50; // Debounce time in milliseconds
+  unsigned long lastDebounceTime = 0; // Variable to store the last button press time
+  bool isSetReady = false; // Variable to track button readiness
+  bool isAmPmSet = false; // Variable to track if AM/PM is set
+  int adjustedSetHour;
   
   while (!isAmPmSet) {
     delay(200);
@@ -413,40 +488,41 @@ String amPmInitialize() { //set AmPm to water:
       
       if (prevAmPmCounter != amPmCounter) {
         lcd.clear();
-        lcd.setCursor(7, 1);
+        lcd.write(2);
+        lcd.setCursor(8, 1);
         lcd.print(displayAmPm);
+        lcd.setCursor(19, 1);
+        lcd.write(3);
         prevAmPmCounter = amPmCounter;
         isSetReady = true;
       }
 
-      if (isRightButton()) {
-        // Right button pressed
-        amPmCounter = (amPmCounter + 1) % 2;
-      } else if (isLeftButton()) {
-        // Left button pressed
+      if (isRightButton() || isLeftButton()) {
+        // Right or left button pressed
         amPmCounter = (amPmCounter + 1) % 2;
       } else if (isMiddleButton() && isSetReady) {
         if (yes_no("Is " + displayAmPm + " Correct?")) {
-        isAmPmSet = true;
-        amPm = displayAmPm;
-      }
-      else
-      {
-        amPmInitialize();
-      }
+          isAmPmSet = true;
+          amPm = displayAmPm;
+          if (amPm == "AM") {
+            return setTime[0];
+          }
+          else
+          {
+            adjustedSetHour = setTime[0] + 12;
+            return adjustedSetHour;
+            
+          }
+        } else {
+          amPmInitialize();
+        }
       }
       
-      lastButtonPress = currentMillis; // Update the last button press time
+      lastDebounceTime = currentMillis; // Update the last button press time
     }
   }
-  if (amPm == "AM")
-  {
-    setHour += 12;
-  }
-  lcd.clear();
-  lcd.print(setHour);
-  delay(700);
 }
+
 
 
 
@@ -461,19 +537,21 @@ void setup () {
   lcd.createChar(3, rightArrow);
   pinMode(ledPin, OUTPUT);
   pinMode(sensorPower, OUTPUT);
+  pinMode(pumpPin, OUTPUT);
+  pinMode(buzzPin, OUTPUT);
 
 #ifndef ESP8266
   while (!Serial); // wait for serial port to connect. Needed for native USB
 #endif
 
   if (! rtc.begin()) {
-    Serial.println("Couldn't find RTC");
+    lcd.print("Couldn't find RTC");
     Serial.flush();
     while (1) delay(10);
   }
 
   if (rtc.lostPower()) {
-    Serial.println("RTC lost power, let's set the time!");
+    lcd.print("RTC lost power, let's set the time!");
     // When time needs to be set on a new device, or after a power loss, the
     // following line sets the RTC to the date & time this sketch was compiled
     rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
@@ -490,6 +568,7 @@ void setup () {
   // rtc.adjust(DateTime(2014, 1, 21, 3, 0, 0));
   String leftRight = " Use Left/Right ";
 
+  // Select Day
   lcd.setCursor(0, 0);
   lcd.print("Select Day to Water");
   lcd.setCursor(0, 2);
@@ -499,146 +578,98 @@ void setup () {
   lcd.print(leftRight);
   lcd.setCursor(leftRight.length() + 1, 0);
   lcd.write(3);
-  
-  
   lcd.setCursor(1, 2);
   lcd.print("Select with Middle");
   delay(750);
   dayInitialize(); //set day to water:
-  delay(750);
+  delay(500);
+  lcd.clear();
 
-
+  // Select Time
+  String up_down = "Use Up/Down Keys";
   lcd.print("Select Time to Water"); 
   lcd.setCursor(0, 2);
   pressAny();
-  lcd.print("Use Up/Down Keys");
+  lcd.write(0);
+  lcd.setCursor(2, 0);
+  lcd.print(up_down);
+  lcd.setCursor(up_down.length() + 3, 0);
+  lcd.write(1);
   lcd.setCursor(0, 2);
   lcd.print("Select with Middle");
   delay(750);
   timeInitialize(); //set time to water:
-  delay(750);
+  delay(500);
+  lcd.clear();
   
-
+  // Select Am/Pm
   lcd.print("Select AM / PM");
   lcd.setCursor(0, 2);
   pressAny();
-  lcd.print("Use Left/Right Keys");
-  lcd.setCursor(0, 2);
+  lcd.write(2);
+  lcd.setCursor(1, 0);
+  lcd.print(leftRight);
+  lcd.setCursor(leftRight.length() + 1, 0);
+  lcd.write(3);
+  lcd.setCursor(1, 2);
   lcd.print("Select with Middle");
   delay(750);
-  amPm = amPmInitialize(); //set AmPm to water:
-  delay(750);
-
-  // lcd.setCursor(4,2);
-  // lcd.print(setDay + " " + timeString + amPm); // replace with dayIndexArray printing function
-  // delay(1000);
+  setTime[0] = amPmInitialize(); //set AmPm to water:
+  lcd.clear();
+  lcd.setCursor(5, 1);
+  lcd.print("Loading...");
 }
 
 void loop () {
 
-    int level = readSensor(); // Get water level value readings:
+    digitalWrite(pumpPin, LOW);
 
-    DateTime now = rtc.now(); // Get Current Time:
-    String currentDay = daysOfTheWeek[now.dayOfTheWeek()]; // Get current day for comparison:
+    while (true) {
+      DateTime now = rtc.now(); // Get Current Time:
+      int level = readSensor();
+      int currentHour = (isDayLightSavings) ? now.hour() : (now.hour() - 1);
+      currentHour = (currentHour == 0) ? 1 : currentHour;
+      String currentDay = daysOfTheWeek[now.dayOfTheWeek()]; // Get current day for comparison:
+      isToday = checkDay(currentDay);
+      DateTime future (now + TimeSpan(7,12,30,6));
+      delay(500);
+      int prevLevel;
 
-    // Serial.print(now.year(), DEC);
-    // Serial.print('/');
-    // Serial.print(now.month(), DEC);
-    // Serial.print('/');
-    // Serial.print(now.day(), DEC);
-    // Serial.print(" (");
-    // Serial.print(daysOfTheWeek[now.dayOfTheWeek()]);
-    // Serial.print(") ");
-    // Serial.print(now.hour(), DEC);
-    // Serial.print(':');
-    // Serial.print(now.minute(), DEC);
-    // Serial.print(':');
-    // Serial.print(now.second(), DEC);
-    // Serial.println();
+      // if (prevLevel >= level + 5 || prevLevel <= level - 5) {
+    if (now.second() % 5 == 0) {
+      lcd.clear();
+      lcd.setCursor(0,0);
+      lcd.print("~~~~~~~~~~~~~~");
+      lcd.setCursor(0,1);
+      lcd.print("Water level: ");
+      lcd.print(level);
+      lcd.setCursor(0,2);
+      lcd.print("~~~~~~~~~~~~~~");
+      digitalWrite(ledPin, LOW);
+      digitalWrite(pumpPin, LOW);
+      }
 
-    // Serial.print(" since midnight 1/1/1970 = ");
-    // Serial.print(now.unixtime());
-    // Serial.print("s = ");
-    // Serial.print(now.unixtime() / 86400L);
-    // Serial.println("d");
-
-    // calculate a date which is 7 days, 12 hours, 30 minutes, 6 seconds into the future
-    DateTime future (now + TimeSpan(7,12,30,6));
-
-    // Serial.print(" now + 7d + 12h + 30m + 6s: ");
-    // Serial.print(future.year(), DEC);
-    // Serial.print('/');
-    // Serial.print(future.month(), DEC);
-    // Serial.print('/');
-    // Serial.print(future.day(), DEC);
-    // Serial.print(' ');
-    // Serial.print(future.hour(), DEC);
-    // Serial.print(':');
-    // Serial.print(future.minute(), DEC);
-    // Serial.print(':');
-    // Serial.print(future.second(), DEC);
-    // Serial.println();
-
-    // Serial.print("Temperature: ");
-    // Serial.print(rtc.getTemperature());
-    // Serial.println(" C");
-
-    // Serial.println();
-
-
-
-
-if (level >= 100) {
-  lcd.clear();
-  digitalWrite(ledPin, LOW);
-  lcd.setCursor(0,0);
-  lcd.print("~~~~~~~~~~~~~~");
-  lcd.setCursor(0,1);
-  lcd.print("Water level: ");
-  lcd.print(level);
-  // Serial.print("Water level: ");
-  // Serial.println(level);
-  lcd.setCursor(0,2);
-  lcd.print("~~~~~~~~~~~~~~");
-  isWet = true;
-  
-}
-
-//(containsDay(dayIndexArray, sizeof(dayIndexArray), currentDay)
-//currentDay == setDay &&
-else if ( now.hour() == setHour && now.minute() == setMin && now.second() <= setSec) {
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("**************");
-  lcd.setCursor(0, 1);
-  lcd.print("Watering in Progress...");
-  lcd.setCursor(0, 2);
-  lcd.print("**************");
-  digitalWrite(ledPin, HIGH);
-  isWet = false;
-} else {
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("~~~~~~~~~~~~~~");
-  lcd.setCursor(0, 1);
-  lcd.print("Water level: ");
-  lcd.print(level);
-  lcd.setCursor(0, 2);
-  lcd.print("~~~~~~~~~~~~~~");
-  digitalWrite(ledPin, LOW);
-  isWet = false;
-}
-
-
-    if (isWet){ 
-      delayTime = 1500;
+      if (isToday && currentHour == setTime[0] && now.minute() == setTime[1] && level <= 100) {
+        break;
+      }
     }
-    else {
-      delayTime = 3000;
+
+  while(!isWet) {
+    int level = readSensor();
+    isWet = checkWet(level);
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("********************");
+    lcd.setCursor(0, 1);
+    lcd.print("Watering in Progress");
+    lcd.setCursor(0, 2);
+    lcd.print("********************");
+    digitalWrite(ledPin, HIGH);
+    digitalWrite(pumpPin, HIGH);
+    delay(3000);
     }
-    
-    delay(delayTime);
-}
+  }
+
 
 
 
