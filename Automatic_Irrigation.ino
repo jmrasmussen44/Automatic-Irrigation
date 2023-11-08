@@ -16,7 +16,7 @@ const int leftButton = 6;  // the number of the pushbutton pin
 const int topButton = 2;  // the number of the pushbutton pin
 const int ledPin = 13;
 const int pumpPin = 8;
-const int buzzPin = 9;
+const int hapticPin = 9;
 
 // variables will change:
 int middleState = 0;  // variable for reading the pushbutton status
@@ -132,40 +132,35 @@ int readSensor()
 	return waterVal;							// send current reading
 }
 
-void hapticFeedback()
+void hapticFeedback(int vibrateTime = 10)
 {
-  digitalWrite(buzzPin, HIGH);
-  delay(10);
-  digitalWrite(buzzPin, LOW);
+  digitalWrite(hapticPin, HIGH);
+  delay(vibrateTime);
+  digitalWrite(hapticPin, LOW);
 }
 
 bool isUpButton() // check if top button is pressed
 {
-  hapticFeedback();
   return (topState == HIGH);
 }
 
 bool isDownButton() // check if bottom button is pressed
 {
-  hapticFeedback();
   return (bottomState == HIGH);
 }
 
 bool isLeftButton() // check if left button is pressed
 {
-  hapticFeedback();
   return (leftState == HIGH);
 }
 
 bool isRightButton() // check if right button is pressed
 {
-  hapticFeedback();
   return (rightState == HIGH);
 }
 
 bool isMiddleButton() // check if middle button is pressed
 {
-  hapticFeedback();
   return (middleState == HIGH);
 }
 
@@ -181,7 +176,7 @@ void pressAny() // if anykey is pressed, continue
   readButtons();
   if (anyKey())
   {
-    hapticFeedback();
+    hapticFeedback(5);
     lcd.clear();
     break;
   }
@@ -200,8 +195,10 @@ bool yes_no(String question) {
     readButtons();
     delay(200);
     if (isRightButton()) {
+      hapticFeedback(15);
       return true;  // User pressed 'y'
     } else if (isLeftButton()) {
+      hapticFeedback(15);
       return false; // User pressed 'n'
     }
     // You can perform other tasks here if needed.
@@ -285,12 +282,14 @@ void dayInitialize() { //set day to water:
 
   
   while (!isDaySet) {
-    delay(200);
+
     unsigned long currentMillis = millis();
     
     // Read buttons and debounce them
     if (currentMillis - lastDebounceTime >= debounceDelay) {
+      delay(250);
       readButtons();
+
       String displayDay = daysOfTheWeek[dayCounter];
       
       if (prevDayCounter != dayCounter) {
@@ -299,6 +298,7 @@ void dayInitialize() { //set day to water:
         lcd.write(2);
         lcd.setCursor(6, 1);
         lcd.print(displayDay);
+        hapticFeedback(5);
         lcd.setCursor(19, 1);
         lcd.write(3);
         lcd.setCursor(0, 2);
@@ -314,10 +314,13 @@ void dayInitialize() { //set day to water:
       if (isRightButton()) {
         // Right button pressed
         dayCounter = (dayCounter + 1) % 7;
+        
       } else if (isLeftButton()) {
         // Left button pressed
         dayCounter = (dayCounter + 6) % 7;
       } else if (isMiddleButton() && isSetReady) {
+        // Middle button pressed
+        hapticFeedback();
         lcd.setCursor(0,0);
         lcd.print("Add Additonal Days?");
         lcd.setCursor(0,3);
@@ -329,6 +332,8 @@ void dayInitialize() { //set day to water:
         delay(1000);
       }
       else if (isDownButton() && isArrayReady) {
+        // Down button pressed
+        hapticFeedback();
         if (yes_no("Is " + listAllArray(selectedDays, 7) + "Correct?")) { 
           isDaySet = true;
         }
@@ -372,10 +377,8 @@ void timeInitialize() {
       restart = false;
     }
 
-    // Wait for a short duration
-    delay(200);
-
     // Read button inputs
+    delay(250);
     readButtons();
     unsigned long currentMillis = millis();
 
@@ -401,12 +404,14 @@ void timeInitialize() {
           lcd.print("Input Hour");
           lcd.setCursor(7, 1);
           lcd.print(timeCounter);
+          hapticFeedback(5);
         } else {
           lcd.print("Input Minute(s)");
           lcd.setCursor(7, 1);
           lcd.print(hourString);
           lcd.setCursor(7 + hourString.length(), 1);
           lcd.print((timeCounter < 10) ? "0" + String(timeCounter) : String(timeCounter));
+          hapticFeedback(5);
         }
       }
 
@@ -429,6 +434,7 @@ void timeInitialize() {
         lcd.write(1);
       } else if (isMiddleButton() && isSetReady) {
         // Middle button pressed
+        hapticFeedback();
         if (!isHourSet) {
           // Set hour and prepare for minute selection
           setHour = timeCounter;
@@ -437,9 +443,11 @@ void timeInitialize() {
           lcd.print("Input Minute(s)");
           lcd.setCursor(7, 1);
           lcd.print(hourString);
+          hapticFeedback(2);
+          delay(40);
+          hapticFeedback(5);
           isHourSet = true;
           timeCounter = 0; // Reset timeCounter for Minute selection
-          delay(500);
         } else {
           // Set minute, construct timeString, and confirm with the user
           lcd.clear();
@@ -478,11 +486,11 @@ int amPmInitialize() {
   int adjustedSetHour;
   
   while (!isAmPmSet) {
-    delay(200);
     unsigned long currentMillis = millis();
     
     // Read buttons and debounce them
     if (currentMillis - lastDebounceTime >= debounceDelay) {
+      delay(350);
       readButtons();
       String displayAmPm = meridiem[amPmCounter];
       
@@ -499,8 +507,10 @@ int amPmInitialize() {
 
       if (isRightButton() || isLeftButton()) {
         // Right or left button pressed
+        hapticFeedback(5);
         amPmCounter = (amPmCounter + 1) % 2;
       } else if (isMiddleButton() && isSetReady) {
+        hapticFeedback();
         if (yes_no("Is " + displayAmPm + " Correct?")) {
           isAmPmSet = true;
           amPm = displayAmPm;
@@ -538,7 +548,7 @@ void setup () {
   pinMode(ledPin, OUTPUT);
   pinMode(sensorPower, OUTPUT);
   pinMode(pumpPin, OUTPUT);
-  pinMode(buzzPin, OUTPUT);
+  pinMode(hapticPin, OUTPUT);
 
 #ifndef ESP8266
   while (!Serial); // wait for serial port to connect. Needed for native USB
@@ -582,8 +592,8 @@ void setup () {
   lcd.print("Select with Middle");
   delay(750);
   dayInitialize(); //set day to water:
-  delay(500);
   lcd.clear();
+  delay(350);
 
   // Select Time
   String up_down = "Use Up/Down Keys";
@@ -599,8 +609,8 @@ void setup () {
   lcd.print("Select with Middle");
   delay(750);
   timeInitialize(); //set time to water:
-  delay(500);
   lcd.clear();
+  delay(350);
   
   // Select Am/Pm
   lcd.print("Select AM / PM");
@@ -621,8 +631,6 @@ void setup () {
 }
 
 void loop () {
-
-    digitalWrite(pumpPin, LOW);
 
     while (true) {
       DateTime now = rtc.now(); // Get Current Time:
