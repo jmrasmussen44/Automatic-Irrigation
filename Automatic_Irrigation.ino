@@ -201,7 +201,6 @@ bool yes_no(String question) {
       hapticFeedback(15);
       return false; // User pressed 'n'
     }
-    // You can perform other tasks here if needed.
   }
 }
 
